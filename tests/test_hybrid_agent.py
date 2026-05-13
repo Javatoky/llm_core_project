@@ -2,8 +2,8 @@ import asyncio
 import sys
 from pathlib import Path
 
-from ..adapters.model_adapter import LLMBackend, ModelConfig
-from ..agents.hybrid_agent import hybrid_agent_reply
+from ..src.adapters.model_adapter import LLMBackend, ModelConfig
+from ..src.agents.hybrid_agent import hybrid_agent_reply
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

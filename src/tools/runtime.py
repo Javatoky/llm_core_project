@@ -5,7 +5,8 @@ from typing import Any
 
 from openai.types.chat import ChatCompletionMessageToolCall
 
-from .errors import ToolArgumentsError, ToolExecutionError, ToolNotFoundError
+from src.tools.errors import (ToolArgumentsError, ToolExecutionError,
+                              ToolNotFoundError)
 
 ToolRegistry = dict[str, tuple[Callable[..., Any], list[str]]]
 

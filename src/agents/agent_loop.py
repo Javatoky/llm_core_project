@@ -1,8 +1,8 @@
 from openai.types.chat import ChatCompletionMessage
 
-from ..adapters.model_adapter import LLMBackend
-from ..tools.runtime import ToolRegistry, tool_call_pipeline
-from .schemas import AgentResult
+from src.adapters.model_adapter import LLMBackend
+from src.agents.schemas import AgentResult
+from src.tools.runtime import ToolRegistry, tool_call_pipeline
 
 
 def build_assistant_tool_message(message: ChatCompletionMessage) -> dict:

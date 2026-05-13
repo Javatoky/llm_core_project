@@ -1,7 +1,9 @@
 import asyncio
 
 import pytest
-from ..adapters.model_adapter import LLMBackend, ModelConfig, NotSupportError
+
+from ..src.adapters.model_adapter import (LLMBackend, ModelConfig,
+                                          NotSupportError)
 
 
 def make_config(

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage
-                               
+
 
 class NotSupportError(Exception):
     pass
@@ -97,9 +97,15 @@ class LLMBackend:
         if not self.config.supports_embeddings or self.embed_client is None:
             raise NotSupportError("当前配置不支持embed调用")
 
-        result = await self.embed_client.embeddings.create(
-            model=self.config.embed_model,
-            input=texts,
-        )
+        MAX_BATCH_SIZE = 25
+        all_embeddings = []
 
-        return [item.embedding for item in result.data]
+        for i in range(0, len(texts), MAX_BATCH_SIZE):
+            batch = texts[i:i + MAX_BATCH_SIZE]
+            result = await self.embed_client.embeddings.create(
+                model=self.config.embed_model,
+                input=batch,
+            )
+            all_embeddings.extend([item.embedding for item in result.data])
+
+        return all_embeddings

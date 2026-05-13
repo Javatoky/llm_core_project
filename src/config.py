@@ -18,7 +18,7 @@ DS_API_KEY = os.getenv("DS_API_KEY")
 DS_BASE_URL = os.getenv("DS_BASE_URL")
 DS_MODEL = os.getenv("DS_MODEL")
 
-CHROMA_PATH = Path(__file__).resolve().parents[1] / "/chromadb"
+CHROMA_PATH = Path(__file__).resolve().parents[1] / "chromadb"
 
 RAG_CONFIG = {
     "top_k": 3,

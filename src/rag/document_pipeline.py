@@ -67,5 +67,5 @@ def add_metadata(filepath: str, chunks: list[str]) -> list[dict]:
 def process_document(filepath: str, chunk_size: int = 300, overlap: int = 50) -> list[dict]:
     """处理单个文档"""
     text = read_file(filepath)
-    chunks = get_chunks(text)
+    chunks = get_chunks(text, chunk_size, overlap)
     return add_metadata(filepath, chunks)

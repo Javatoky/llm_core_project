@@ -3,7 +3,7 @@
 import ast
 import operator
 
-from .errors import ToolExecutionError
+from src.tools.errors import ToolExecutionError
 
 SAFE_BINARY_OPERATORS = {
     ast.Add: operator.add,

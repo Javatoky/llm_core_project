@@ -2,9 +2,8 @@
 
 from collections.abc import Callable
 
-from .math_tools import calculate
-from .weather_tools import get_weather
-
+from src.tools.math_tools import calculate
+from src.tools.weather_tools import get_weather
 
 GET_WEATHER_SCHEMA = {
     "type": "function",
@@ -42,15 +41,47 @@ CALCULATE_SCHEMA = {
     },
 }
 
+SEARCH_DOCUMENTS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "search_documents",
+        "description": (
+            "在本地知识库、私有文档、笔记或参考资料中检索与用户问题相关的内容。"
+            "当用户询问文档、提示词、笔记、资料内容时应使用此工具。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "用于检索本地知识库的查询语句，应保留用户问题中的关键信息。",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
 
-def build_tool_schemas() -> list[dict]:
+
+
+def build_tool_schemas(include_rag: bool = False) -> list[dict]:
     """返回当前可用工具的 schema"""
-    return [GET_WEATHER_SCHEMA, CALCULATE_SCHEMA]
+    schemas = [GET_WEATHER_SCHEMA, CALCULATE_SCHEMA]
+
+    if include_rag:
+        schemas.append(SEARCH_DOCUMENTS_SCHEMA)
+
+    return schemas
 
 
-def build_tool_registry() -> dict[str, tuple[Callable, list[str]]]:
+def build_tool_registry(search_documents: Callable | None = None) -> dict[str, tuple[Callable, list[str]]]:
     """返回当前可用工具注册表"""
-    return {
+    registry = {
         "get_weather": (get_weather, ["city"]),
         "calculate": (calculate, ["expression"]),
     }
+
+    if search_documents is not None:
+        registry["search_documents"] = (search_documents, ["query"])
+
+    return registry

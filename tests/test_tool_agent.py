@@ -7,11 +7,11 @@ import pytest
 from openai.types.chat import (ChatCompletionMessage,
                                ChatCompletionMessageToolCall)
 
-from ..adapters.model_adapter import LLMBackend, ModelConfig
-from ..agents.agent_loop import agent_loop
 from ..agents.tool_agent import (ArgumentError, ToolNameError, calculate,
                                  get_weather, invoke, parse_tool_call,
                                  resolve_tool)
+from ..src.adapters.model_adapter import LLMBackend, ModelConfig
+from ..src.agents.agent_loop import agent_loop
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

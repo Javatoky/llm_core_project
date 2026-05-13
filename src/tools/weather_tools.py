@@ -1,4 +1,4 @@
-from .errors import ToolExecutionError
+from src.tools.errors import ToolExecutionError
 
 
 async def get_weather(city: str) -> str:

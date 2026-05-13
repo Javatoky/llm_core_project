@@ -2,8 +2,8 @@ import asyncio
 import sys
 from pathlib import Path
 
-from ..adapters.model_adapter import LLMBackend, ModelConfig
-from ..rag.rag_agent import answer_with_rag, build_vector_store
+from ..src.adapters.model_adapter import LLMBackend, ModelConfig
+from ..src.rag.rag_agent import answer_with_rag, build_vector_store
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
