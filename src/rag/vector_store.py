@@ -1,5 +1,4 @@
 import chromadb
-
 from src.config import CHROMA_PATH
 
 _client = chromadb.PersistentClient(path=str(CHROMA_PATH))
@@ -14,6 +13,9 @@ def upsert_chunks(chunks: list[dict], embeddings: list[list[float]], collection_
     """将文档存入数据库"""
     if len(chunks) != len(embeddings):
         raise ValueError("chunks 和 embeddings 数量不一致")
+    
+    if not chunks:
+        return
     
     collection = get_or_create_collection(collection_name)
 

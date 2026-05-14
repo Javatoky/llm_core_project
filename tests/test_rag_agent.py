@@ -1,75 +1,390 @@
+"""rag_agent.py 测试模块
+
+测试 src/rag/rag_agent.py 中的核心函数。
+使用 monkeypatch 避免真实 ChromaDB 和模型调用。
+"""
 import asyncio
-import sys
-from pathlib import Path
 
-from ..src.adapters.model_adapter import LLMBackend, ModelConfig
-from ..src.rag.rag_agent import answer_with_rag, build_vector_store
+import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from src.adapters.model_adapter import LLMBackend, ModelConfig
+from src.rag.rag_agent import (
+    RAG_SYSTEM_PROMPT,
+    answer_with_rag,
+    build_vector_store,
+    format_context,
+    retrieve,
+)
+
+# ==================== format_context 测试 ====================
 
 
-from config import (QWEN_ALY_API_KEY, QWEN_ALY_BASE_URL, QWEN_API_KEY,
-                    QWEN_BASE_URL, QWEN_EMBED_MODEL, QWEN_MODEL)
+def test_format_context_with_results():
+    """测试 format_context() 能把检索结果拼成包含 source / chunk_index / text 的上下文"""
+    texts = [
+        {
+            "source": "doc1.md",
+            "chunk_index": 1,
+            "reference_text": "这是第一段文本内容",
+        },
+        {
+            "source": "doc2.md",
+            "chunk_index": 2,
+            "reference_text": "这是第二段文本内容",
+        },
+    ]
 
-test_filepaths = [
-    "../test_documents/gemini_prompt.md",
-    "../test_documents/my_view_on_friendship.md",
-    "../test_documents/ai_and_coding.md",
-    "../test_documents/metacognitive_role.md",
-    "../test_documents/personal_prioritization_under_multiple_tasks.md"
-]
-# 转换为相对于当前脚本所在目录的绝对路径
-script_dir = Path(__file__).parent
-test_filepaths = [str(script_dir / path) for path in test_filepaths]
+    result = format_context(texts)
 
-test_cases = [
-    "Gemini 3提示词中给Gemini设定的Goal",
-    "真正的友谊",
-    "Trump最喜欢的食物"
-]
+    assert "[source]: doc1.md" in result
+    assert "[chunk_index]: 1" in result
+    assert "[text]: 这是第一段文本内容" in result
+    assert "[source]: doc2.md" in result
+    assert "[chunk_index]: 2" in result
+    assert "[text]: 这是第二段文本内容" in result
 
-system_prompt = """
-    ## Role: 你是一个问答助手，能根据用户的问题输入，严格根据参考文本回答
-    ## Constrains & Capability: 
-        - 用户输入中会包含**参考文本（包含来源）**和**问题**两部分，你只能根据**参考文本**回答用户的**问题**
-        - 如果**参考文本**中没有相关内容或没有内容必须回答“根据现有资料无法回答此问题”
-        - 不可编造任何参考资料中没有的内容
-        - 回答必须包含参考资料的来源标注
-    ## Knowledge: 用户输入中的所有**参考文本**的内容
-    ## Output Format: 
-        - 尽可能结构化输出
-        - 内容简要、直击要点
-    ## Example Output: 
-        问答示例：
-        用户：元认知的提升对一个人成长的作用是怎样的?
-        助手：根据参考资料metacognitive_role.md 的 chunk_1、chunk_2，元认知的提升对个人成长有如下作用：
-        1. 打破惯性反应：在刺激与行动间创造“暂停键”，变无意识反应为主动选择。
-        2. 升级学习模式：不只纠错答案，更溯源思维漏洞，将失败转化为底层算法的迭代。
-        3. 消解情绪内耗：抽离出“观察者视角”，在痛苦中剥离意义，提升心理韧性。
-        4. 实现跨域迁移：从“学会知识”进阶到“学会如何学习”，让成长方式本身不断进化。
-    """.strip()
 
-async def main():
-    """主流程"""
-    backend = LLMBackend(ModelConfig(
-        chat_model = QWEN_MODEL,
-        chat_api_key = QWEN_API_KEY,
-        chat_base_url = QWEN_BASE_URL,
-        embed_model = QWEN_EMBED_MODEL,
-        embed_api_key = QWEN_ALY_API_KEY,
-        embed_base_url = QWEN_ALY_BASE_URL,
-        supports_embeddings = True
-    ))
+def test_format_context_empty():
+    """测试 format_context([]) 对空结果的行为"""
+    result = format_context([])
+    assert result == ""
 
-    await build_vector_store(backend, test_filepaths, "my_documents")
-    for i, case in enumerate(test_cases, 1):
-        print(f"\n---Test{i}---")
-        messages = [
-            {"role": "system", "content": system_prompt}
+
+def test_format_context_includes_distance():
+    """测试 format_context() 包含 distance 信息"""
+    texts = [
+        {
+            "source": "doc1.md",
+            "chunk_index": 1,
+            "reference_text": "相关内容",
+            "distance": 0.35,
+        },
+    ]
+
+    result = format_context(texts)
+
+    assert "distance" in result or "[text]:" in result
+
+
+# ==================== retrieve 测试 ====================
+
+
+@pytest.fixture
+def backend():
+    """创建 mock backend"""
+    config = ModelConfig(
+        chat_model="qwen-plus",
+        chat_api_key="test-key",
+        chat_base_url="http://test.local/v1",
+        embed_model="text-embedding-v3",
+        embed_api_key="test-key",
+        embed_base_url="http://test.local/v1",
+        supports_embeddings=True,
+        supports_chat=True,
+    )
+    return LLMBackend(config)
+
+
+def test_retrieve_calls_embed(monkeypatch, backend):
+    """测试 retrieve() 会调用 backend.embed([query])"""
+    query = "测试查询"
+    collection_name = "test_collection"
+    mock_embedding = [0.1, 0.2, 0.3]
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(backend, "embed", mock_embed)
+
+    mock_query_result = [
+        {
+            "reference_text": "匹配内容",
+            "source": "doc.md",
+            "chunk_index": 1,
+            "distance": 0.5,
+        }
+    ]
+
+    def mock_query_collection(query_embedding, top_k, collection_name):
+        assert query_embedding == mock_embedding
+        return mock_query_result
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.query_collection", mock_query_collection
+    )
+
+    result = asyncio.run(retrieve(backend, query, collection_name))
+
+    assert len(result) == 1
+    assert result[0]["reference_text"] == "匹配内容"
+
+
+def test_retrieve_calls_query_collection_with_correct_params(monkeypatch, backend):
+    """测试 retrieve() 会调用 query_collection(query_embedding=..., top_k=..., collection_name=...)"""
+    query = "测试查询"
+    collection_name = "my_docs"
+    top_k = 5
+    mock_embedding = [0.1, 0.2, 0.3]
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(backend, "embed", mock_embed)
+
+    captured_params = {}
+
+    def mock_query_collection(query_embedding, top_k, collection_name):
+        captured_params["query_embedding"] = query_embedding
+        captured_params["top_k"] = top_k
+        captured_params["collection_name"] = collection_name
+        return []
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.query_collection", mock_query_collection
+    )
+
+    asyncio.run(retrieve(backend, query, collection_name, top_k=top_k))
+
+    assert captured_params["query_embedding"] == mock_embedding
+    assert captured_params["top_k"] == top_k
+    assert captured_params["collection_name"] == collection_name
+
+
+def test_retrieve_filters_by_distance_threshold(monkeypatch, backend):
+    """测试 retrieve() 会根据 distance_threshold 过滤结果"""
+    query = "测试查询"
+    collection_name = "test_collection"
+    mock_embedding = [0.1, 0.2, 0.3]
+    distance_threshold = 0.6
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(backend, "embed", mock_embed)
+
+    mock_query_result = [
+        {"reference_text": "内容 1", "source": "doc1.md", "chunk_index": 1, "distance": 0.3},
+        {"reference_text": "内容 2", "source": "doc2.md", "chunk_index": 2, "distance": 0.5},
+        {"reference_text": "内容 3", "source": "doc3.md", "chunk_index": 3, "distance": 0.7},
+        {"reference_text": "内容 4", "source": "doc4.md", "chunk_index": 4, "distance": 0.9},
+    ]
+
+    def mock_query_collection(query_embedding, top_k, collection_name):
+        return mock_query_result
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.query_collection", mock_query_collection
+    )
+
+    result = asyncio.run(
+        retrieve(backend, query, collection_name, distance_threshold=distance_threshold)
+    )
+
+    assert len(result) == 2
+    assert all(r["distance"] <= distance_threshold for r in result)
+
+
+# ==================== answer_with_rag 测试 ====================
+
+
+def test_answer_with_rag_retrieves_then_calls_chat(monkeypatch, backend):
+    """测试 answer_with_rag() 会先 retrieve，再构造带 context 的 messages，再调用 backend.chat()"""
+    user_input = "如何提升元认知能力？"
+    collection_name = "test_collection"
+    messages = []
+
+    mock_embedding = [0.1, 0.2, 0.3]
+    mock_retrieve_result = [
+        {
+            "reference_text": "元认知能力提升方法...",
+            "source": "metacognitive.md",
+            "chunk_index": 1,
+            "distance": 0.4,
+        }
+    ]
+    expected_reply = "根据资料，提升元认知能力的方法包括..."
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(backend, "embed", mock_embed)
+
+    def mock_query_collection(query_embedding, top_k, collection_name):
+        return mock_retrieve_result
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.query_collection", mock_query_collection
+    )
+
+    async def mock_chat(msgs, **kwargs):
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "system"
+        assert RAG_SYSTEM_PROMPT in msgs[0]["content"]
+        assert msgs[1]["role"] == "user"
+        assert "【参考文本信息】" in msgs[1]["content"]
+        assert "【用户问题】" in msgs[1]["content"]
+        assert user_input in msgs[1]["content"]
+        return expected_reply
+
+    monkeypatch.setattr(backend, "chat", mock_chat)
+
+    reply = asyncio.run(
+        answer_with_rag(backend, user_input, collection_name, messages)
+    )
+
+    assert reply == expected_reply
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == user_input
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"] == expected_reply
+
+
+def test_answer_with_rag_no_results_returns_fallback(monkeypatch, backend):
+    """测试无检索结果时，answer_with_rag() 应返回固定拒答文案"""
+    user_input = "一个找不到答案的问题"
+    collection_name = "test_collection"
+    messages = []
+
+    mock_embedding = [0.1, 0.2, 0.3]
+    expected_fallback = "根据现有资料无法回答此问题。"
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(backend, "embed", mock_embed)
+
+    def mock_query_collection(query_embedding, top_k, collection_name):
+        return []
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.query_collection", mock_query_collection
+    )
+
+    reply = asyncio.run(
+        answer_with_rag(backend, user_input, collection_name, messages)
+    )
+
+    assert reply == expected_fallback
+    assert len(messages) == 2
+    assert messages[0]["content"] == user_input
+    assert messages[1]["content"] == expected_fallback
+
+
+def test_answer_with_rag_with_all_retrievals_filtered_out(monkeypatch, backend):
+    """测试当所有检索结果都因距离阈值被过滤时，返回拒答文案"""
+    user_input = "测试问题"
+    collection_name = "test_collection"
+    messages = []
+
+    mock_embedding = [0.1, 0.2, 0.3]
+    expected_fallback = "根据现有资料无法回答此问题。"
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(backend, "embed", mock_embed)
+
+    def mock_query_collection(query_embedding, top_k, collection_name):
+        return [
+            {
+                "reference_text": "相关内容",
+                "source": "doc.md",
+                "chunk_index": 1,
+                "distance": 0.95,
+            }
         ]
-        print(f"用户：{case}")
-        reply = await answer_with_rag(backend, case, "my_documents", messages)
-        print(f"助手：{reply}")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    monkeypatch.setattr(
+        "src.rag.rag_agent.query_collection", mock_query_collection
+    )
+
+    reply = asyncio.run(
+        answer_with_rag(backend, user_input, collection_name, messages)
+    )
+
+    assert reply == expected_fallback
+
+
+# ==================== build_vector_store 测试 ====================
+
+
+def test_build_vector_store_processes_documents_and_upserts(monkeypatch, tmp_path):
+    """测试 build_vector_store 处理文档并存储"""
+    test_file = tmp_path / "test_doc.md"
+    test_file.write_text("# Test Document\n\nThis is test content.")
+
+    config = ModelConfig(
+        chat_model="qwen-plus",
+        chat_api_key="test-key",
+        chat_base_url="http://test.local/v1",
+        embed_model="text-embedding-v3",
+        embed_api_key="test-key",
+        embed_base_url="http://test.local/v1",
+        supports_embeddings=True,
+    )
+    test_backend = LLMBackend(config)
+
+    mock_embedding = [0.1, 0.2, 0.3]
+
+    async def mock_embed(texts):
+        return [mock_embedding] * len(texts)
+
+    monkeypatch.setattr(test_backend, "embed", mock_embed)
+
+    captured_chunks = []
+    captured_embeddings = []
+    captured_collection_name = []
+
+    def mock_upsert_chunks(chunks, embeddings, collection_name):
+        captured_chunks.extend(chunks)
+        captured_embeddings.extend(embeddings)
+        captured_collection_name.append(collection_name)
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.upsert_chunks", mock_upsert_chunks
+    )
+
+    asyncio.run(build_vector_store(test_backend, [str(test_file)], "test_collection"))
+
+    assert len(captured_chunks) > 0
+    assert len(captured_embeddings) == len(captured_chunks)
+    assert captured_collection_name == ["test_collection"]
+
+
+def test_build_vector_store_empty_documents(monkeypatch, tmp_path):
+    """测试 build_vector_store 处理空文档列表的行为"""
+    config = ModelConfig(
+        chat_model="qwen-plus",
+        chat_api_key="test-key",
+        chat_base_url="http://test.local/v1",
+        embed_model="text-embedding-v3",
+        embed_api_key="test-key",
+        embed_base_url="http://test.local/v1",
+        supports_embeddings=True,
+    )
+    test_backend = LLMBackend(config)
+
+    embed_called = False
+
+    async def mock_embed(texts):
+        nonlocal embed_called
+        embed_called = True
+        return [[0.1, 0.2, 0.3]] * len(texts)
+
+    monkeypatch.setattr(test_backend, "embed", mock_embed)
+
+    upsert_called = False
+
+    def mock_upsert_chunks(chunks, embeddings, collection_name):
+        nonlocal upsert_called
+        upsert_called = True
+
+    monkeypatch.setattr(
+        "src.rag.rag_agent.upsert_chunks", mock_upsert_chunks
+    )
+
+    asyncio.run(build_vector_store(test_backend, [], "test_collection"))
+
+    assert embed_called is False
+    assert upsert_called is False
