@@ -7,9 +7,7 @@ from src.config import (QWEN_ALY_API_KEY, QWEN_ALY_BASE_URL, QWEN_API_KEY,
                         QWEN_BASE_URL, QWEN_EMBED_MODEL, QWEN_MODEL)
 
 
-@pytest.mark.integration
-def test_chat_integration():
-    """集成测试模型chat接口"""
+def make_backend() -> LLMBackend:
     model_config = ModelConfig(
         chat_model = QWEN_MODEL,
         chat_api_key = QWEN_API_KEY,
@@ -20,10 +18,16 @@ def test_chat_integration():
         supports_embeddings = True
     )
 
-    backend = LLMBackend(model_config)
+    return LLMBackend(model_config)
+
+@pytest.mark.integration
+def test_chat_integration():
+    """集成测试模型chat接口"""
+    backend = make_backend()
     
     messages = [
-        {"role": "system", "content": ""}
+        {"role": "system", "content": "你是一个简洁回复的助手"},
+        {"role": "user", "content": "请只回复：pong"}
     ]
 
     reply = asyncio.run(backend.chat(messages))
@@ -34,17 +38,7 @@ def test_chat_integration():
 @pytest.mark.integration
 def test_embed_integration():
     """集成测试模型embed接口"""
-    model_config = ModelConfig(
-        chat_model = QWEN_MODEL,
-        chat_api_key = QWEN_API_KEY,
-        chat_base_url = QWEN_BASE_URL,
-        embed_model = QWEN_EMBED_MODEL,
-        embed_api_key = QWEN_ALY_API_KEY,
-        embed_base_url = QWEN_ALY_BASE_URL,
-        supports_embeddings = True
-    )
-
-    backend = LLMBackend(model_config)
+    backend = make_backend()
 
     test_content = "你好"
 

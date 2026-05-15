@@ -1,11 +1,10 @@
 """hybrid_agent.py 单元测试"""
 
 import asyncio
-import pytest
 from unittest.mock import MagicMock
 
-from src.agents.schemas import AgentResult
 from src.agents import hybrid_agent
+from src.agents.schemas import AgentResult
 
 
 class TestHybridAgentReply:
